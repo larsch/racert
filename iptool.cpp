@@ -304,6 +304,14 @@ ipaddr getaddr(const char* host) {
 	throw std::runtime_error(std::string("Unable to resolve target system name ") + host + ".");
 }
 
+void printUsage() {
+	std::cout << std::endl <<
+		"Usage: racert [-h maximum_hops] target_name" << std::endl <<
+		std::endl <<
+		"Options:" << std::endl <<
+		"    -h maximum_hops   Maximum number of hops to search for target." << std::endl;
+}
+
 int main_safe(int argc, char** argv) {
 	const char* host = 0;
 	unsigned int maxHops = 32;
@@ -311,7 +319,7 @@ int main_safe(int argc, char** argv) {
 	for (int argi = 1; argi < argc; ++argi)
 	{
 		char* str = argv[argi];
-		if (str[0] == '-' || str[0] == '/' || host) {
+		if (str[0] == '-' || str[0] == '/') {
 			switch (str[1]) {
 			case 'h':
 				maxHops = atoi(argv[++argi]); break;
@@ -319,10 +327,19 @@ int main_safe(int argc, char** argv) {
 				throw std::runtime_error(std::string(str) + " is not a valid command option.");
 			}
 		}
-		else {
+		else if (host) {
+			printUsage();
+			return 1;
+		} else {
 			host = str;
 		}
 	}
+
+	if (!host) {
+		printUsage();
+		return 1;
+	}
+
 	ipaddr addr(getaddr(host));
 	std::cout << std::endl << "Tracing route to " << host << "[" << addr << "]" << std::endl;
 	std::cout << "over a maximum of " << maxHops << "hops:" << std::endl << std::endl;
