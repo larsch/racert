@@ -24,84 +24,29 @@ struct result {
 	ipaddr source;
 };
 
-threadqueue<result*> resultQueue;
+struct position {
+	position(int x = 0, int y = 0) : x(x), y(y) {}
+	int x;
+	int y;
+};
 
-void handleResults()
-{
-	for (;;) {
-		result* r = resultQueue.pop();
-		std::cout << r->ttl << "  ";
-		if (r->timeout)
-			std::cout << "?";
-		else
-			std::cout << r->source << " " << r->rtt.msecs_double() << "ms";
-		std::cout << std::endl;
-		delete r;
+class console {
+public:
+	console() : output(GetStdHandle(STD_OUTPUT_HANDLE)) {}
+	position cursor_position() const {
+		CONSOLE_SCREEN_BUFFER_INFO info;
+		GetConsoleScreenBufferInfo(output, &info);
+		return position(info.dwCursorPosition.X, info.dwCursorPosition.Y);
 	}
-}
-
-void postResult(unsigned ttl, bool timeout, tick_count rtt, ipaddr source = ipaddr())
-{
-	result* r = new result;
-	r->ttl = ttl;
-	r->timeout = timeout;
-	r->rtt = rtt;
-	r->source = source;
-	resultQueue.push(r);
-}
-
-void traceThread(ipaddr addr, unsigned ttl)
-{
-	std::cout << "pinging " << addr << " with ttl " << ttl << std::endl;
-
-	HANDLE icmp = IcmpCreateFile();
-	BYTE requestData[32];
-	WORD requestSize = 32;
-	BYTE replyBuffer[1024];
-	DWORD replySize = 1024;
-	DWORD timeout = 5000;
-	IP_OPTION_INFORMATION requestOptions;
-	requestOptions.Ttl = UCHAR(ttl);
-	requestOptions.Tos = 0;
-	requestOptions.Flags = 0;
-	requestOptions.OptionsSize = 0;
-	tick_count before;
-	//DWORD tick = timeGetTime();
-	DWORD result = IcmpSendEcho(icmp, addr.network(), requestData, requestSize,
-		&requestOptions, replyBuffer, replySize,
-		timeout);
-	//DWORD delta = timeGetTime() - tick;
-	tick_count after;
-	if (result == 0)
-	{
-		std::cerr << ">" << GetLastError() << "<" << std::endl;
-		postResult(ttl, true, 0);
+	void set_cursor_position(const position& pos) {
+		COORD cursorPosition = { short(pos.x), short(pos.y) };
+		SetConsoleCursorPosition(output, cursorPosition);
 	}
-	else
-	{
-		PICMP_ECHO_REPLY reply = (PICMP_ECHO_REPLY)replyBuffer;
-		ipaddr sourceAddress = ipaddr::from_network(reply->Address);
-		postResult(ttl, false, after - before, sourceAddress);
-	}
-	IcmpCloseHandle(icmp);
-}
+private:
+	HANDLE output;
+};
 
-//void startTrace(ipaddr addr, unsigned ttl)
-//{
-//	job* j = new job;
-//	j->ttl = ttl;
-//	j->addr = addr;
-//	_beginthread(traceThread, 0, j);
-//}
-
-void traceroute(ipaddr addr)
-{
-	for (unsigned int ttl = 0; ttl <= 30; ++ttl)
-		//new std::thread(traceThread, addr, ttl);
-		traceThread(addr, ttl);
-	//startTrace(addr, ttl);
-	handleResults();
-}
+threadqueue<result> resultQueue;
 
 result ping(ipaddr addr, unsigned ttl)
 {
@@ -130,8 +75,8 @@ result ping(ipaddr addr, unsigned ttl)
 
 	if (result == 0)
 	{
-		DWORD err = GetLastError();
-		std::cout << unsigned(ttl) << " ? (" << err << ")" << std::endl;
+		// DWORD err = GetLastError();
+		// std::cout << unsigned(ttl) << " ? (" << err << ")" << std::endl;
 
 		r.rtt = 0;
 		r.source = ipaddr();
@@ -148,6 +93,71 @@ result ping(ipaddr addr, unsigned ttl)
 	}
 }
 
+void traceThread(ipaddr addr, unsigned ttl)
+{
+	// std::cout << "pinging " << addr << " with ttl " << ttl << std::endl;
+	resultQueue.push(ping(addr, ttl));
+}
+
+unsigned int jobCount = 0;
+
+unsigned int nextTtl = 0;
+
+console con;
+
+void printResultLine(const result &r)
+{
+	std::cout << r.ttl << "  ";
+	if (r.timeout)
+		std::cout << "?";
+	else
+		std::cout << r.source << " " << r.rtt.msecs_double() << "ms";
+	std::cout << std::endl;
+}
+
+void outputResult(const result& r)
+{
+	while (r.ttl > nextTtl)
+	{
+		std::cout << "skip " << r.ttl << " " << nextTtl << std::endl;
+		++nextTtl;
+	}
+	if (r.ttl == nextTtl)
+	{
+		printResultLine(r);
+		++nextTtl;
+	}
+	if (r.ttl < nextTtl) {
+		position save = con.cursor_position();
+		int delta = nextTtl - r.ttl;
+		position temp(0, save.y - delta);
+		con.set_cursor_position(temp);
+		printResultLine(r);
+		con.set_cursor_position(save);
+	}
+
+}
+
+void waitForResults(unsigned int timeout)
+{
+	result r;
+	if (resultQueue.try_pop(r, timeout)) {
+		outputResult(r);
+		--jobCount;
+	}
+}
+
+void traceroute(ipaddr addr)
+{
+	for (unsigned int ttl = 0; ttl <= 30; ++ttl) {
+		new std::thread(traceThread, addr, ttl);
+		++jobCount;
+		waitForResults(500);
+	}
+	while (jobCount > 0)
+		waitForResults(100);
+}
+
 void tracerouteold(ipaddr addr)
 {
 	for (unsigned ttl = 0; ttl <= 30; ++ttl) {
@@ -156,7 +166,8 @@ void tracerouteold(ipaddr addr)
 		if (r.timeout)
 			std::cout << "?";
 		else
-			std::cout << r.rtt.msecs_double() << "ms " << r.source << std::endl;
+			std::cout << r.rtt.msecs_double() << "ms " << r.source;
+		std::cout << std::endl;
 		if (r.source == addr)
 			break;
 	}
@@ -226,7 +237,7 @@ int main_safe(int argc, char** argv) {
 	}
 	ipaddr addr(getaddr(host));
 	std::cout << "Tracing route to " << host << "[" << addr << "]" << std::endl;
-	tracerouteold(addr);
+	traceroute(addr);
 	return 0;
 }
 
@@ -234,32 +245,6 @@ int main(int argc, char** argv)
 {
 	WSAData data;
 	WSAStartup(MAKEWORD(1, 0), &data);
-	timeBeginPeriod(1);
-
-	//HANDLE icmp = IcmpCreateFile();
-	//BYTE requestData[32];
-	//WORD requestSize = 32;
-	//BYTE replyBuffer[2048];
-	//DWORD replySize = 2048;
-	//DWORD timeout = 5000;
-	//IP_OPTION_INFORMATION requestOptions;
-	//requestOptions.Ttl = 4;
-	//requestOptions.Tos = 0;
-	//requestOptions.Flags = 0;
-	//requestOptions.OptionsSize = 0;
-	////tick_count before;
-	////uint64_t tick = xclock();
-	//DWORD tick = timeGetTime();
-	//DWORD result = IcmpSendEcho(icmp, 0x08080808, requestData, requestSize,
-	//	&requestOptions, replyBuffer, replySize,
-	//	timeout);
-	//std::cout << result << std::endl;
-
-	//tracerouteold(ipaddr(8, 8, 8, 8));
-
-	//return 0;
-
-	// timeEndPeriod(1);
 	try {
 		return main_safe(argc, argv);
 	}
