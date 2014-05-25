@@ -1,0 +1,6 @@
+add_library(pcap STATIC IMPORTED GLOBAL)
+add_library(packet STATIC IMPORTED GLOBAL)
+set_target_properties(pcap PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/Include")
+set_target_properties(pcap PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/lib/wpcap.lib")
+set_target_properties(packet PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/lib/packet.lib")
+get_target_property(out pcap INTERFACE_INCLUDE_DIRECTORIES)
