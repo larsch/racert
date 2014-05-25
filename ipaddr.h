@@ -12,6 +12,7 @@ public:
 	ipaddr(uint32_t _addr = 0) { m_addr.d = _addr; }
 	ipaddr(IN_ADDR _addr) { m_addr.d = ntohl(_addr.s_addr); }
 	ipaddr(uint8_t _a, uint8_t _b, uint8_t _c, uint8_t _d) { m_addr.b[0] = _a; m_addr.b[1] = _b; m_addr.b[2] = _c; m_addr.b[3] = _d; }
+	operator IN_ADDR() const { IN_ADDR saddr; saddr.s_addr = network(); return saddr;  }
 	uint32_t host() const { return m_addr.d; }
 	uint32_t network() const { return htonl(m_addr.d); }
 	uint8_t& operator[](size_t _index) { return m_addr.b[_index]; }
@@ -25,6 +26,10 @@ private:
 
 inline bool operator==(const ipaddr& _lhs, const ipaddr& _rhs) {
 	return _lhs.host() == _rhs.host();
+}
+
+inline bool operator!=(const ipaddr& _lhs, const ipaddr& _rhs) {
+	return _lhs.host() != _rhs.host();
 }
 
 std::ostream& operator<<(std::ostream& _os, const ipaddr& _ipaddr);

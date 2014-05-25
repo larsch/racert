@@ -6,8 +6,11 @@
 #include <icmpapi.h>
 #include <cstdint>
 #include <process.h>
+#include <string>
 
 #include <thread>
+#include <iomanip>
+#include <map>
 #include "threadqueue.h"
 #include "ipaddr.h"
 #include "tick_count.h"
@@ -19,9 +22,9 @@ struct job {
 
 struct result {
 	unsigned ttl;
-	bool timeout;
 	tick_count rtt;
 	ipaddr source;
+	std::string hostname;
 };
 
 struct position {
@@ -47,6 +50,27 @@ private:
 };
 
 threadqueue<result> resultQueue;
+
+result resolve(unsigned ttl, ipaddr addr)
+{
+	struct sockaddr_in sin;
+	sin.sin_family = AF_INET;
+	sin.sin_addr = addr;
+	sin.sin_port = 0;
+	char hostname[1024];
+	size_t hostname_len = 1024;
+	int res = getnameinfo((sockaddr*)&sin, sizeof(sin), hostname, hostname_len, 0, 0, NI_NAMEREQD);
+	result r;
+	r.ttl = ttl;
+	r.source = addr;
+	if (res == 0) {
+		r.hostname = hostname;
+	}
+	else {
+		r.hostname = "?";
+	}
+	return r;
+}
 
 result ping(ipaddr addr, unsigned ttl)
 {
@@ -78,9 +102,8 @@ result ping(ipaddr addr, unsigned ttl)
 		// DWORD err = GetLastError();
 		// std::cout << unsigned(ttl) << " ? (" << err << ")" << std::endl;
 
-		r.rtt = 0;
+		r.rtt = UINT64_MAX;
 		r.source = ipaddr();
-		r.timeout = true;
 		return r;
 	}
 	else
@@ -88,43 +111,73 @@ result ping(ipaddr addr, unsigned ttl)
 		PICMP_ECHO_REPLY reply = (PICMP_ECHO_REPLY)replyBuffer;
 		r.rtt = after - before;
 		r.source = ipaddr::from_network(reply->Address);
-		r.timeout = false;
 		return r;
 	}
 }
 
 void traceThread(ipaddr addr, unsigned ttl)
 {
-	// std::cout << "pinging " << addr << " with ttl " << ttl << std::endl;
 	resultQueue.push(ping(addr, ttl));
 }
 
-unsigned int jobCount = 0;
+void resolveThread(ipaddr addr, unsigned ttl)
+{
+	resultQueue.push(resolve(ttl, addr));
+}
 
+unsigned int jobCount = 0;
 unsigned int nextTtl = 0;
+unsigned int maxTtl = 255;
 
 console con;
 
-void printResultLine(const result &r)
+struct rowinfo {
+	unsigned ttl;
+	tick_count lowest;
+	tick_count average;
+	tick_count highest;
+	std::deque<tick_count> latest;
+	ipaddr address;
+	std::string hostname;
+};
+
+void printRow(const rowinfo &r)
 {
-	std::cout << r.ttl << "  ";
-	if (r.timeout)
-		std::cout << "?";
-	else
-		std::cout << r.source << " " << r.rtt.msecs_double() << "ms";
+	std::cout << std::setw(3) << r.ttl << "  ";
+	for (unsigned int i = 0; i < 3; ++i) {
+		if (r.latest.size() > i) {
+			tick_count rtt = r.latest[i];
+			if (rtt.count() == UINT64_MAX)
+				std::cout << "      *    ";
+			else {
+				std::cout.precision(2);
+				std::cout.setf(std::ios::fixed, std::ios::floatfield);
+				std::cout << std::setw(7) << rtt.msecs_double() << " ms" << " ";
+			}
+		}
+		else {
+			std::cout << "       ... ";
+		}
+	}
+	if (r.address != INADDR_ANY) {
+		if (r.hostname.empty() || r.hostname == "?")
+			std::cout << r.address;
+		else
+			std::cout << r.hostname << " [" << r.address << "]";
+	}
 	std::cout << std::endl;
 }
 
-void outputResult(const result& r)
+void outputRow(const rowinfo& r)
 {
 	while (r.ttl > nextTtl)
 	{
-		std::cout << "skip " << r.ttl << " " << nextTtl << std::endl;
+		printRow(r);
 		++nextTtl;
 	}
 	if (r.ttl == nextTtl)
 	{
-		printResultLine(r);
+		printRow(r);
 		++nextTtl;
 	}
 	if (r.ttl < nextTtl) {
@@ -132,46 +185,74 @@ void outputResult(const result& r)
 		int delta = nextTtl - r.ttl;
 		position temp(0, save.y - delta);
 		con.set_cursor_position(temp);
-		printResultLine(r);
+		printRow(r);
 		con.set_cursor_position(save);
 	}
-
 }
 
-void waitForResults(unsigned int timeout)
+
+std::map<unsigned int, rowinfo> m;
+
+void handleResult(ipaddr addr, const result& r)
+{
+	if (r.ttl > maxTtl)
+		return;
+	rowinfo& row = m[r.ttl];
+	if (r.hostname.empty()) {
+		row.ttl = r.ttl;
+		row.latest.push_back(r.rtt);
+		row.address = r.source;
+		if (row.latest.size() < 3) {
+			new std::thread(traceThread, addr, r.ttl);
+			++jobCount;
+		}
+		if (row.hostname.empty() && row.address != INADDR_ANY) {
+			new std::thread(resolveThread, r.source, r.ttl);
+			++jobCount;
+		}
+		if (r.source == addr && maxTtl > r.ttl)
+			maxTtl = r.ttl;
+	}
+	else {
+		row.hostname = r.hostname;
+	}
+	outputRow(row);
+}
+
+void waitForResults(ipaddr addr, unsigned int timeout)
 {
 	result r;
 	if (resultQueue.try_pop(r, timeout)) {
-		outputResult(r);
+		handleResult(addr, r);
 		--jobCount;
 	}
 }
 
-void traceroute(ipaddr addr)
+void traceroute(ipaddr addr, unsigned int maxHops)
 {
-	for (unsigned int ttl = 0; ttl <= 30; ++ttl) {
+	for (unsigned int ttl = 0; ttl <= maxHops; ++ttl) {
 		new std::thread(traceThread, addr, ttl);
 		++jobCount;
-		waitForResults(500);
+		waitForResults(addr, 500);
 	}
 	while (jobCount > 0)
-		waitForResults(100);
+		waitForResults(addr, 100);
 }
 
-void tracerouteold(ipaddr addr)
-{
-	for (unsigned ttl = 0; ttl <= 30; ++ttl) {
-		result r = ping(addr, ttl);
-		std::cout << r.ttl << " ";
-		if (r.timeout)
-			std::cout << "?";
-		else
-			std::cout << r.rtt.msecs_double() << "ms " << r.source;
-		std::cout << std::endl;
-		if (r.source == addr)
-			break;
-	}
-}
+//void tracerouteold(ipaddr addr)
+//{
+//	for (unsigned ttl = 0; ttl <= 30; ++ttl) {
+//		result r = ping(addr, ttl);
+//		std::cout << r.ttl << " ";
+//		if (r.timeout)
+//			std::cout << "?";
+//		else
+//			std::cout << r.rtt.msecs_double() << "ms " << r.source;
+//		std::cout << std::endl;
+//		if (r.source == addr)
+//			break;
+//	}
+//}
 
 void getinfo(const char* str)
 {
@@ -220,24 +301,33 @@ ipaddr getaddr(const char* host) {
 		}
 		freeaddrinfo(info);
 	}
-	throw std::runtime_error("Failed to get address for host");
+	throw std::runtime_error(std::string("Unable to resolve target system name ") + host + ".");
 }
 
 int main_safe(int argc, char** argv) {
 	const char* host = 0;
+	unsigned int maxHops = 32;
+
 	for (int argi = 1; argi < argc; ++argi)
 	{
 		char* str = argv[argi];
-		if (str[0] == '-' || str[1] == '/' || host) {
-			throw std::runtime_error("Bad parameter");
+		if (str[0] == '-' || str[0] == '/' || host) {
+			switch (str[1]) {
+			case 'h':
+				maxHops = atoi(argv[++argi]); break;
+			default:
+				throw std::runtime_error(std::string(str) + " is not a valid command option.");
+			}
 		}
 		else {
 			host = str;
 		}
 	}
 	ipaddr addr(getaddr(host));
-	std::cout << "Tracing route to " << host << "[" << addr << "]" << std::endl;
-	traceroute(addr);
+	std::cout << std::endl << "Tracing route to " << host << "[" << addr << "]" << std::endl;
+	std::cout << "over a maximum of " << maxHops << "hops:" << std::endl << std::endl;
+	traceroute(addr, maxHops);
+	std::cout << std::endl << "Trace complete." << std::endl;
 	return 0;
 }
 
