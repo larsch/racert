@@ -125,56 +125,67 @@ void traceroute(ipaddr addr)
 	for (unsigned int ttl = 0; ttl <= 30; ++ttl)
 		//new std::thread(traceThread, addr, ttl);
 		traceThread(addr, ttl);
-		//startTrace(addr, ttl);
+	//startTrace(addr, ttl);
 	handleResults();
+}
+
+result ping(ipaddr addr, unsigned ttl)
+{
+	HANDLE icmp = IcmpCreateFile();
+	BYTE requestData[32];
+	WORD requestSize = 32;
+	ZeroMemory(requestData, requestSize);
+	BYTE replyBuffer[2048];
+	DWORD replySize = 2048;
+	DWORD timeout = 1500;
+	IP_OPTION_INFORMATION requestOptions;
+	requestOptions.Ttl = UCHAR(ttl);
+	requestOptions.Tos = 0;
+	requestOptions.Flags = 0;
+	requestOptions.OptionsSize = 0;
+	requestOptions.OptionsData = NULL;
+	tick_count before;
+	DWORD result = IcmpSendEcho(icmp, addr.network(), requestData, requestSize,
+		&requestOptions, replyBuffer, replySize,
+		timeout);
+	tick_count after;
+
+	struct result r;
+	r.ttl = ttl;
+	IcmpCloseHandle(icmp);
+
+	if (result == 0)
+	{
+		DWORD err = GetLastError();
+		std::cout << unsigned(ttl) << " ? (" << err << ")" << std::endl;
+
+		r.rtt = 0;
+		r.source = ipaddr();
+		r.timeout = true;
+		return r;
+	}
+	else
+	{
+		PICMP_ECHO_REPLY reply = (PICMP_ECHO_REPLY)replyBuffer;
+		r.rtt = after - before;
+		r.source = ipaddr::from_network(reply->Address);
+		r.timeout = false;
+		return r;
+	}
 }
 
 void tracerouteold(ipaddr addr)
 {
-	HANDLE icmp = IcmpCreateFile();
 	for (UCHAR ttl = 0; ttl <= 30; ++ttl) {
-      BYTE requestData[32];
-      WORD requestSize = 32;
-	  ZeroMemory(requestData, requestSize);
-	  BYTE replyBuffer[2048];
-	  DWORD replySize = 2048;
-      DWORD timeout = 1500;
-      IP_OPTION_INFORMATION requestOptions;
-	  requestOptions.Ttl = ttl;
-      requestOptions.Tos = 0;
-      requestOptions.Flags = 0;
-      requestOptions.OptionsSize = 0;
-	  requestOptions.OptionsData = NULL;
-	  //tick_count before;
-	  //uint64_t tick = xclock();
-      DWORD tick = timeGetTime();
-	  std::cerr << "send to " << addr << std::endl;
-      DWORD result = IcmpSendEcho(icmp, addr.network(), requestData, requestSize,
-                                  &requestOptions, replyBuffer, replySize,
-                                  timeout);
-      DWORD delta = timeGetTime() - tick;
-	  //uint64_t delta = xclock() - tick;
-	  //tick_count after;
-	  std::cout << result << " ";
-	  if (result == 0)
-      {
-		  DWORD err = GetLastError();
-		  std::cout << unsigned(ttl) << " ? (" << err << ")" << std::endl;
-      }
-      else
-      {
-		//  double delay = (after - before).msecs_double();
-		  double delay = delta;
-         PICMP_ECHO_REPLY reply = (PICMP_ECHO_REPLY)replyBuffer;
-		 ipaddr sourceAddress = ipaddr::from_network(reply->Address);
-			 std::cout << unsigned(ttl) << " " << sourceAddress << " " << delay << "ms" << std::endl;
-			 if (sourceAddress == addr)
-			 {
-				 break;
-			 }
-      }
-   }
-	IcmpCloseHandle(icmp);
+		result r = ping(addr, ttl);
+		std::cout << r.ttl << " ";
+		if (r.timeout)
+			std::cout << "?";
+		else
+			std::cout << r.rtt.msecs_double() << "ms " << r.source << std::endl;
+		if (r.source == addr)
+			break;
+	}
 }
 
 void getinfo(const char* str)
@@ -234,7 +245,8 @@ int main_safe(int argc, char** argv) {
 		char* str = argv[argi];
 		if (str[0] == '-' || str[1] == '/' || host) {
 			throw std::runtime_error("Bad parameter");
-		} else {
+		}
+		else {
 			host = str;
 		}
 	}
