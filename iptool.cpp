@@ -182,6 +182,7 @@ void outputRow(const rowinfo& r)
 	while (r.ttl > nextTtl)
 	{
 		rowinfo& row = m[nextTtl];
+		row.ttl = nextTtl;
 		printRow(row);
 		++nextTtl;
 	}
