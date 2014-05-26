@@ -25,6 +25,7 @@ struct result {
 	tick_count rtt;
 	ipaddr source;
 	std::string hostname;
+	unsigned timeout;
 };
 
 struct position {
@@ -72,7 +73,7 @@ result resolve(unsigned ttl, ipaddr addr)
 	return r;
 }
 
-result ping(ipaddr addr, unsigned ttl)
+result ping(ipaddr addr, unsigned ttl, unsigned timeout)
 {
 	HANDLE icmp = IcmpCreateFile();
 	BYTE requestData[32];
@@ -80,7 +81,6 @@ result ping(ipaddr addr, unsigned ttl)
 	ZeroMemory(requestData, requestSize);
 	BYTE replyBuffer[2048];
 	DWORD replySize = 2048;
-	DWORD timeout = 1500;
 	IP_OPTION_INFORMATION requestOptions;
 	requestOptions.Ttl = UCHAR(ttl);
 	requestOptions.Tos = 0;
@@ -95,6 +95,7 @@ result ping(ipaddr addr, unsigned ttl)
 
 	struct result r;
 	r.ttl = ttl;
+	r.timeout = timeout;
 	IcmpCloseHandle(icmp);
 
 	if (result == 0)
@@ -115,9 +116,9 @@ result ping(ipaddr addr, unsigned ttl)
 	}
 }
 
-void traceThread(ipaddr addr, unsigned ttl)
+void traceThread(ipaddr addr, unsigned ttl, unsigned timeout)
 {
-	resultQueue.push(ping(addr, ttl));
+	resultQueue.push(ping(addr, ttl, timeout));
 }
 
 void resolveThread(ipaddr addr, unsigned ttl)
@@ -211,7 +212,7 @@ void handleResult(ipaddr addr, const result& r)
 		row.latest.push_back(r.rtt);
 		row.address = r.source;
 		if (row.latest.size() < 3) {
-			new std::thread(traceThread, addr, r.ttl);
+			new std::thread(traceThread, addr, r.ttl, r.timeout);
 			++jobCount;
 		}
 		if (row.hostname.empty() && row.address != INADDR_ANY) {
@@ -236,10 +237,10 @@ void waitForResults(ipaddr addr, unsigned int timeout)
 	}
 }
 
-void traceroute(ipaddr addr, unsigned int maxHops)
+void traceroute(ipaddr addr, unsigned int maxHops, unsigned int timeout)
 {
 	for (unsigned int ttl = 1; ttl <= maxHops; ++ttl) {
-		new std::thread(traceThread, addr, ttl);
+		new std::thread(traceThread, addr, ttl, timeout);
 		++jobCount;
 		waitForResults(addr, 500);
 	}
@@ -317,12 +318,14 @@ void printUsage() {
 		"Usage: racert [-h maximum_hops] target_name" << std::endl <<
 		std::endl <<
 		"Options:" << std::endl <<
-		"    -h maximum_hops   Maximum number of hops to search for target." << std::endl;
+		"    -h maximum_hops    Maximum number of hops to search for target." << std::endl <<
+		"    -w timeout         Wait timeout milliseconds for each reply." << std::endl;
 }
 
 int main_safe(int argc, char** argv) {
 	const char* host = 0;
 	unsigned int maxHops = 30;
+	unsigned int timeout = 5000;
 
 	for (int argi = 1; argi < argc; ++argi)
 	{
@@ -330,7 +333,11 @@ int main_safe(int argc, char** argv) {
 		if (str[0] == '-' || str[0] == '/') {
 			switch (str[1]) {
 			case 'h':
-				maxHops = atoi(argv[++argi]); break;
+				maxHops = atoi(argv[++argi]);
+				break;
+			case 'w':
+				timeout = atoi(argv[++argi]);
+				break;
 			default:
 				throw std::runtime_error(std::string(str) + " is not a valid command option.");
 			}
@@ -338,7 +345,8 @@ int main_safe(int argc, char** argv) {
 		else if (host) {
 			printUsage();
 			return 1;
-		} else {
+		}
+		else {
 			host = str;
 		}
 	}
@@ -351,7 +359,7 @@ int main_safe(int argc, char** argv) {
 	ipaddr addr(getaddr(host));
 	std::cout << std::endl << "Tracing route to " << host << " [" << addr << "]" << std::endl;
 	std::cout << "over a maximum of " << maxHops << " hops:" << std::endl << std::endl;
-	traceroute(addr, maxHops);
+	traceroute(addr, maxHops, timeout);
 	std::cout << std::endl << "Trace complete." << std::endl;
 	return 0;
 }
