@@ -126,7 +126,7 @@ void resolveThread(ipaddr addr, unsigned ttl)
 }
 
 unsigned int jobCount = 0;
-unsigned int nextTtl = 0;
+unsigned int nextTtl = 1;
 unsigned int maxTtl = 255;
 
 console con;
@@ -144,6 +144,7 @@ struct rowinfo {
 void printRow(const rowinfo &r)
 {
 	std::cout << std::setw(3) << r.ttl << "  ";
+	bool allTimeout = true;
 	for (unsigned int i = 0; i < 3; ++i) {
 		if (r.latest.size() > i) {
 			tick_count rtt = r.latest[i];
@@ -153,10 +154,12 @@ void printRow(const rowinfo &r)
 				std::cout.precision(2);
 				std::cout.setf(std::ios::fixed, std::ios::floatfield);
 				std::cout << std::setw(7) << rtt.msecs_double() << " ms" << " ";
+				allTimeout = false;
 			}
 		}
 		else {
-			std::cout << "       ... ";
+			std::cout << "      ?    ";
+			allTimeout = false;
 		}
 	}
 	if (r.address != INADDR_ANY) {
@@ -165,14 +168,21 @@ void printRow(const rowinfo &r)
 		else
 			std::cout << r.hostname << " [" << r.address << "]";
 	}
+	else if (allTimeout)
+	{
+		std::cout << "Request timed out.";
+	}
 	std::cout << std::endl;
 }
+
+std::map<unsigned int, rowinfo> m;
 
 void outputRow(const rowinfo& r)
 {
 	while (r.ttl > nextTtl)
 	{
-		printRow(r);
+		rowinfo& row = m[nextTtl];
+		printRow(row);
 		++nextTtl;
 	}
 	if (r.ttl == nextTtl)
@@ -189,9 +199,6 @@ void outputRow(const rowinfo& r)
 		con.set_cursor_position(save);
 	}
 }
-
-
-std::map<unsigned int, rowinfo> m;
 
 void handleResult(ipaddr addr, const result& r)
 {
@@ -230,7 +237,7 @@ void waitForResults(ipaddr addr, unsigned int timeout)
 
 void traceroute(ipaddr addr, unsigned int maxHops)
 {
-	for (unsigned int ttl = 0; ttl <= maxHops; ++ttl) {
+	for (unsigned int ttl = 1; ttl <= maxHops; ++ttl) {
 		new std::thread(traceThread, addr, ttl);
 		++jobCount;
 		waitForResults(addr, 500);
@@ -314,7 +321,7 @@ void printUsage() {
 
 int main_safe(int argc, char** argv) {
 	const char* host = 0;
-	unsigned int maxHops = 32;
+	unsigned int maxHops = 30;
 
 	for (int argi = 1; argi < argc; ++argi)
 	{
@@ -341,8 +348,8 @@ int main_safe(int argc, char** argv) {
 	}
 
 	ipaddr addr(getaddr(host));
-	std::cout << std::endl << "Tracing route to " << host << "[" << addr << "]" << std::endl;
-	std::cout << "over a maximum of " << maxHops << "hops:" << std::endl << std::endl;
+	std::cout << std::endl << "Tracing route to " << host << " [" << addr << "]" << std::endl;
+	std::cout << "over a maximum of " << maxHops << " hops:" << std::endl << std::endl;
 	traceroute(addr, maxHops);
 	std::cout << std::endl << "Trace complete." << std::endl;
 	return 0;
