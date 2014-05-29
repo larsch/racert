@@ -1,31 +1,23 @@
-#include <WinSock2.h>
-#include <ws2tcpip.h>
-#include <iostream>
-#include <windows.h>
-#include <iphlpapi.h>
-#include <icmpapi.h>
 #include <cstdint>
 #include <process.h>
 #include <string>
 
+#include <WinSock2.h>
+#include <ws2tcpip.h>
+
 #include <thread>
 #include <iomanip>
 #include <map>
+#include <iostream>
+
 #include "threadqueue.h"
 #include "ipaddr.h"
 #include "tick_count.h"
+#include "ping.h"
 
 struct job {
 	ipaddr addr;
 	unsigned ttl;
-};
-
-struct result {
-	unsigned ttl;
-	tick_count rtt;
-	ipaddr source;
-	std::string hostname;
-	unsigned timeout;
 };
 
 struct position {
@@ -71,49 +63,6 @@ result resolve(unsigned ttl, ipaddr addr)
 		r.hostname = "?";
 	}
 	return r;
-}
-
-result ping(ipaddr addr, unsigned ttl, unsigned timeout)
-{
-	HANDLE icmp = IcmpCreateFile();
-	BYTE requestData[32];
-	WORD requestSize = 32;
-	ZeroMemory(requestData, requestSize);
-	BYTE replyBuffer[2048];
-	DWORD replySize = 2048;
-	IP_OPTION_INFORMATION requestOptions;
-	requestOptions.Ttl = UCHAR(ttl);
-	requestOptions.Tos = 0;
-	requestOptions.Flags = 0;
-	requestOptions.OptionsSize = 0;
-	requestOptions.OptionsData = NULL;
-	tick_count before;
-	DWORD result = IcmpSendEcho(icmp, addr.network(), requestData, requestSize,
-		&requestOptions, replyBuffer, replySize,
-		timeout);
-	tick_count after;
-
-	struct result r;
-	r.ttl = ttl;
-	r.timeout = timeout;
-	IcmpCloseHandle(icmp);
-
-	if (result == 0)
-	{
-		// DWORD err = GetLastError();
-		// std::cout << unsigned(ttl) << " ? (" << err << ")" << std::endl;
-
-		r.rtt = UINT64_MAX;
-		r.source = ipaddr();
-		return r;
-	}
-	else
-	{
-		PICMP_ECHO_REPLY reply = (PICMP_ECHO_REPLY)replyBuffer;
-		r.rtt = after - before;
-		r.source = ipaddr::from_network(reply->Address);
-		return r;
-	}
 }
 
 void traceThread(ipaddr addr, unsigned ttl, unsigned timeout)
@@ -202,6 +151,17 @@ void outputRow(const rowinfo& r)
 	}
 }
 
+#include <vector>
+std::vector<std::thread*> threads;
+
+template<class _Fn, class... _Args>
+void launchJob(_Fn&& _Fx, _Args&&... _Ax)
+{
+	std::thread* t = new std::thread(_Fx, _Ax...);
+	threads.push_back(t);
+	++jobCount;
+}
+
 void handleResult(ipaddr addr, const result& r)
 {
 	if (r.ttl > maxTtl)
@@ -212,8 +172,9 @@ void handleResult(ipaddr addr, const result& r)
 		row.latest.push_back(r.rtt);
 		row.address = r.source;
 		if (row.latest.size() < 3) {
-			new std::thread(traceThread, addr, r.ttl, r.timeout);
-			++jobCount;
+			launchJob(traceThread, addr, r.ttl, r.timeout);
+			//new std::thread(traceThread, addr, r.ttl, r.timeout);
+			//++jobCount;
 		}
 		if (row.hostname.empty() && row.address != INADDR_ANY) {
 			new std::thread(resolveThread, r.source, r.ttl);

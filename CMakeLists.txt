@@ -8,15 +8,21 @@ set(sources ipaddr.cpp
   threadqueue.cpp
   tick_count.cpp)
 
+if(WIN32)
+  list(APPEND sources win32/ping.cpp)
+endif()
+
 if(MSVC)
   add_compile_options(/W4 /MP)
 endif()
 
-# add_subdirectory(WpdPack)
+include_directories(.)
+
 add_executable(racert ${sources} ${headers})
-get_target_property(out pcap INTERFACE_INCLUDE_DIRECTORIES)
-# target_link_libraries(racert pcap)
-target_link_libraries(racert iphlpapi)
-target_link_libraries(racert winmm)
-target_link_libraries(racert ws2_32)
+
+if(WIN32)
+  target_link_libraries(racert iphlpapi)
+  target_link_libraries(racert winmm)
+  target_link_libraries(racert ws2_32)
+endif()
 
