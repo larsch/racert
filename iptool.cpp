@@ -35,11 +35,6 @@
 #include "tick_count.h"
 #include "ping.h"
 
-struct job {
-	ipaddr addr;
-	unsigned ttl;
-};
-
 struct position {
 	position(int x = 0, int y = 0) : x(x), y(y) {}
 	int x;
@@ -228,21 +223,6 @@ void traceroute(ipaddr addr, unsigned int maxHops, unsigned int timeout)
 	while (jobCount > 0)
 		waitForResults(addr, 100);
 }
-
-//void tracerouteold(ipaddr addr)
-//{
-//	for (unsigned ttl = 0; ttl <= 30; ++ttl) {
-//		result r = ping(addr, ttl);
-//		std::cout << r.ttl << " ";
-//		if (r.timeout)
-//			std::cout << "?";
-//		else
-//			std::cout << r.rtt.msecs_double() << "ms " << r.source;
-//		std::cout << std::endl;
-//		if (r.source == addr)
-//			break;
-//	}
-//}
 
 void getinfo(const char* str)
 {
