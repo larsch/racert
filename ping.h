@@ -1,3 +1,5 @@
+// Copyright (C) 2014-2016 Lars Christensen
+
 #ifndef _ping_h
 #define _ping_h
 

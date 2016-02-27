@@ -19,6 +19,8 @@
 # SOFTWARE.
 
 cmake_minimum_required(VERSION 2.8)
+
+add_compile_options(/W4)
 project(iptool)
 set(headers ipaddr.h
   threadqueue.h

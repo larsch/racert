@@ -1,4 +1,4 @@
-// Copyright (C) 2014 Lars Christensen
+// Copyright (C) 2014-2016 Lars Christensen
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files(the "Software"), to deal
@@ -21,13 +21,16 @@
 #include "tick_count.h"
 #include <Windows.h>
 
-uint64_t tick_count::counter() {
-	uint64_t count;
-	QueryPerformanceCounter((LARGE_INTEGER*)&count);
-	return count;
+uint64_t tick_count::counter()
+{
+   uint64_t count;
+   QueryPerformanceCounter((LARGE_INTEGER*)&count);
+   return count;
 }
-uint64_t tick_count::freq() {
-	uint64_t freq;
-	QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
-	return freq;
+
+uint64_t tick_count::freq()
+{
+   uint64_t freq;
+   QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
+   return freq;
 }

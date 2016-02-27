@@ -1,4 +1,4 @@
-// Copyright (C) 2014 Lars Christensen
+// Copyright (C) 2014-2016 Lars Christensen
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files(the "Software"), to deal
@@ -21,7 +21,7 @@
 #include "ipaddr.h"
 #include <ostream>
 
-std::ostream& operator<<(std::ostream& _os, const ipaddr& _ipaddr) {
-	return _os << unsigned(_ipaddr[3]) << "." << unsigned(_ipaddr[2]) << "." << unsigned(_ipaddr[1]) << "." << unsigned(_ipaddr[0]);
+std::ostream& operator<<(std::ostream& _os, const ipaddr& _ipaddr)
+{
+   return _os << unsigned(_ipaddr[3]) << "." << unsigned(_ipaddr[2]) << "." << unsigned(_ipaddr[1]) << "." << unsigned(_ipaddr[0]);
 }
-
