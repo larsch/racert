@@ -54,7 +54,7 @@ result ping(ipaddr addr, unsigned ttl, unsigned timeout)
       // DWORD err = GetLastError();
       // std::cout << unsigned(ttl) << " ? (" << err << ")" << std::endl;
 
-      r.rtt = UINT64_MAX;
+      r.rtt = tick_count(UINT64_MAX);
       r.source = ipaddr();
       return r;
    } else {

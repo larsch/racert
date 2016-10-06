@@ -129,7 +129,7 @@ void printRow(const rowinfo& r)
          allTimeout = false;
       }
    }
-   if (r.address != INADDR_ANY) {
+   if (r.address != ipaddr::any) {
       if (r.hostname.empty() || r.hostname == "?") {
          std::cout << r.address;
       } else {
@@ -194,7 +194,7 @@ void handleResult(ipaddr addr, const result& r)
          // new std::thread(traceThread, addr, r.ttl, r.timeout);
          //++jobCount;
       }
-      if (row.hostname.empty() && row.address != INADDR_ANY) {
+      if (row.hostname.empty() && row.address != ipaddr::any) {
          new std::thread(resolveThread, r.source, r.ttl);
          ++jobCount;
       }
@@ -228,30 +228,6 @@ void traceroute(ipaddr addr, unsigned int maxHops, unsigned int timeout)
    }
    if (interrupted) {
       throw std::runtime_error("Interrupted");
-   }
-}
-
-void getinfo(const char* str)
-{
-   addrinfo* info;
-
-   int res = getaddrinfo(str, 0, 0, &info);
-   if (res == 0) {
-      addrinfo* cur = info;
-      while (cur) {
-         if (cur->ai_addr->sa_family == AF_INET) {
-            struct sockaddr_in* sin = (sockaddr_in*)cur->ai_addr;
-            ipaddr addr = ipaddr(sin->sin_addr);
-            std::cout << addr;
-         }
-         if (cur->ai_canonname) {
-            std::cout << " " << cur->ai_canonname;
-         }
-         std::cout << std::endl;
-         cur = cur->ai_next;
-      }
-   } else {
-      std::cerr << "Failed to getaddrinfo() for " << str << "(" << res << ")" << std::endl;
    }
 }
 

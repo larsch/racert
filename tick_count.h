@@ -26,7 +26,7 @@
 class tick_count {
 public:
 	tick_count() : m_count(counter()) {}
-	tick_count(uint64_t v) : m_count(v) {}
+	explicit tick_count(uint64_t v) : m_count(v) {}
 	static tick_count now() { return tick_count(counter()); }
 	uint64_t count() const { return m_count; }
 	double secs_double() const { return m_count / double(freq()); }

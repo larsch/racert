@@ -25,3 +25,5 @@ std::ostream& operator<<(std::ostream& _os, const ipaddr& _ipaddr)
 {
    return _os << unsigned(_ipaddr[3]) << "." << unsigned(_ipaddr[2]) << "." << unsigned(_ipaddr[1]) << "." << unsigned(_ipaddr[0]);
 }
+
+const ipaddr ipaddr::any(INADDR_ANY);
