@@ -78,7 +78,7 @@ result resolve(unsigned ttl, ipaddr addr)
    if (res == 0) {
       r.hostname = hostname;
    } else {
-      r.hostname = "?";
+      r.hostname = "";
    }
    return r;
 }
@@ -130,8 +130,10 @@ void printRow(const rowinfo& r)
       }
    }
    if (r.address != ipaddr::any) {
-      if (r.hostname.empty() || r.hostname == "?") {
+      if (r.hostname == "?") {
          std::cout << r.address;
+      } else if (r.hostname.empty()) {
+         std::cout << "? [" << r.address << "]";
       } else {
          std::cout << r.hostname << " [" << r.address << "]";
       }
